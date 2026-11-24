@@ -1,38 +1,98 @@
 
 import 'package:flutter/material.dart';
 import 'screens/add_note_screen.dart';
-import 'services/note_storage.dart';
 import 'screens/calendar_screen.dart';
+import 'services/note_storage.dart';
 import 'services/notification_service.dart';
+import 'services/theme_storage.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-
   await NotificationService.initialize();
-
   runApp(const MyApp());
 }
 
-class MyApp extends StatelessWidget {
+// APP THEME
+class MyApp extends StatefulWidget {
   const MyApp({super.key});
+
+  @override
+  State<MyApp> createState() => _MyAppState();
+}
+
+class _MyAppState extends State<MyApp> {
+  bool isDarkMode = false;
+
+  @override
+  void initState() {
+    super.initState();
+    loadTheme();
+  }
+
+  Future<void> loadTheme() async {
+    final savedTheme = await ThemeStorage.loadTheme();
+
+    if (!mounted) return;
+
+    setState(() {
+      isDarkMode = savedTheme;
+    });
+  }
+
+  Future<void> toggleTheme() async {
+    setState(() {
+      isDarkMode = !isDarkMode;
+    });
+
+    await ThemeStorage.saveTheme(isDarkMode);
+  }
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       title: 'My Personal Organizer',
+      themeMode: isDarkMode ? ThemeMode.dark : ThemeMode.light,
+
       theme: ThemeData(
+        brightness: Brightness.light,
         primarySwatch: Colors.deepPurple,
         scaffoldBackgroundColor: const Color(0xFFF8F7FC),
         useMaterial3: true,
       ),
-      home: const HomeScreen(),
+
+      darkTheme: ThemeData(
+        brightness: Brightness.dark,
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: Colors.deepPurple,
+          brightness: Brightness.dark,
+        ),
+        scaffoldBackgroundColor: const Color(0xFF121212),
+        appBarTheme: const AppBarTheme(
+          backgroundColor: Color(0xFF121212),
+          foregroundColor: Colors.white,
+        ),
+        useMaterial3: true,
+      ),
+
+      home: HomeScreen(
+        isDarkMode: isDarkMode,
+        onToggleTheme: toggleTheme,
+      ),
     );
   }
 }
 
+// HOME SCREEN
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key});
+  final bool isDarkMode;
+  final Future<void> Function() onToggleTheme;
+
+  const HomeScreen({
+    super.key,
+    required this.isDarkMode,
+    required this.onToggleTheme,
+  });
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -60,13 +120,22 @@ class _HomeScreenState extends State<HomeScreen> {
   static const Color primaryColor = Color(0xFF673AB7);
   static const Color backgroundColor = Color(0xFFF8F7FC);
 
+  Color get textColor =>
+      widget.isDarkMode ? Colors.white : const Color(0xFF333044);
+
+  Color get secondaryTextColor =>
+      widget.isDarkMode ? Colors.white70 : Colors.grey.shade600;
+
+  Color get cardColor =>
+      widget.isDarkMode ? const Color(0xFF252525) : Colors.white;
+
   @override
   void initState() {
     super.initState();
     loadNotes();
   }
 
-  // Load notes and preserve older notes
+  // LOAD NOTES
   Future<void> loadNotes() async {
     try {
       final savedNotes = await NoteStorage.loadNotes();
@@ -96,12 +165,12 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  // Save notes permanently
+  // SAVE NOTES
   Future<void> saveNotes() async {
     await NoteStorage.saveNotes(notes);
   }
 
-  // Add new note
+  // ADD NOTE
   Future<void> addNote() async {
     final result = await Navigator.push<Map<String, String>>(
       context,
@@ -132,7 +201,7 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  // Edit existing note
+  // EDIT NOTE
   Future<void> editNote(int index) async {
     final result = await Navigator.push<Map<String, String>>(
       context,
@@ -149,22 +218,14 @@ class _HomeScreenState extends State<HomeScreen> {
 
     if (result != null) {
       final oldNote = notes[index];
-
       final updatedNote = Map<String, String>.from(oldNote);
 
       updatedNote['title'] = result['title'] ?? '';
       updatedNote['description'] = result['description'] ?? '';
-      updatedNote['category'] =
-          result['category'] ?? 'General';
-
-      updatedNote['isFavorite'] =
-          oldNote['isFavorite'] ?? 'false';
-
-      updatedNote['createdAt'] =
-          oldNote['createdAt'] ?? '';
-
-      updatedNote['updatedAt'] =
-          DateTime.now().toIso8601String();
+      updatedNote['category'] = result['category'] ?? 'General';
+      updatedNote['isFavorite'] = oldNote['isFavorite'] ?? 'false';
+      updatedNote['createdAt'] = oldNote['createdAt'] ?? '';
+      updatedNote['updatedAt'] = DateTime.now().toIso8601String();
 
       setState(() {
         notes[index] = updatedNote;
@@ -174,7 +235,7 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  // Toggle favorite
+  // FAVORITE
   Future<void> toggleFavorite(int index) async {
     final currentlyFavorite =
         notes[index]['isFavorite'] == 'true';
@@ -187,14 +248,19 @@ class _HomeScreenState extends State<HomeScreen> {
     await saveNotes();
   }
 
-  // Delete note
+  // DELETE NOTE
   Future<void> deleteNote(int index) async {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Delete Note?'),
-        content: const Text(
+        backgroundColor: cardColor,
+        title: Text(
+          'Delete Note?',
+          style: TextStyle(color: textColor),
+        ),
+        content: Text(
           'Are you sure you want to delete this note?',
+          style: TextStyle(color: secondaryTextColor),
         ),
         actions: [
           TextButton(
@@ -223,7 +289,7 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  // Category icons
+  // CATEGORY ICONS
   IconData getCategoryIcon(String category) {
     switch (category) {
       case 'Personal Info':
@@ -241,8 +307,25 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  // Category colors
+  // CATEGORY COLORS
   Color getCategoryColor(String category) {
+    if (widget.isDarkMode) {
+      switch (category) {
+        case 'Personal Info':
+          return const Color(0xFF593044);
+        case 'Professional':
+          return const Color(0xFF263B55);
+        case 'Education':
+          return const Color(0xFF574027);
+        case 'Ideas':
+          return const Color(0xFF55451E);
+        case 'Tasks':
+          return const Color(0xFF254A36);
+        default:
+          return const Color(0xFF40315B);
+      }
+    }
+
     switch (category) {
       case 'Personal Info':
         return Colors.pink.shade50;
@@ -259,7 +342,7 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  // Format date
+  // FORMAT DATE
   String formatDate(String? value) {
     if (value == null || value.isEmpty) {
       return 'Date not recorded';
@@ -280,9 +363,7 @@ class _HomeScreenState extends State<HomeScreen> {
           ? 12
           : date.hour % 12;
 
-      final minute =
-          date.minute.toString().padLeft(2, '0');
-
+      final minute = date.minute.toString().padLeft(2, '0');
       final period = date.hour >= 12 ? 'PM' : 'AM';
 
       return '$day ${months[date.month - 1]} '
@@ -292,17 +373,16 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  // Category count
+  // CATEGORY COUNT
   int categoryCount(String category) {
     return notes.where(
       (note) => (note['category'] ?? 'General') == category,
     ).length;
   }
 
-  // Category card
+  // CATEGORY CARD
   Widget buildCategoryCard(String category) {
     final count = categoryCount(category);
-
     final isSelected = selectedCategoryFilter == category;
 
     return GestureDetector(
@@ -317,14 +397,14 @@ class _HomeScreenState extends State<HomeScreen> {
         margin: const EdgeInsets.only(right: 10),
         padding: const EdgeInsets.all(13),
         decoration: BoxDecoration(
-          color: isSelected
-              ? primaryColor
-              : Colors.white,
+          color: isSelected ? primaryColor : cardColor,
           borderRadius: BorderRadius.circular(16),
           border: Border.all(
             color: isSelected
                 ? primaryColor
-                : Colors.deepPurple.shade100,
+                : (widget.isDarkMode
+                    ? Colors.white24
+                    : Colors.deepPurple.shade100),
           ),
         ),
         child: Column(
@@ -332,9 +412,7 @@ class _HomeScreenState extends State<HomeScreen> {
           children: [
             Icon(
               getCategoryIcon(category),
-              color: isSelected
-                  ? Colors.white
-                  : primaryColor,
+              color: isSelected ? Colors.white : primaryColor,
               size: 25,
             ),
             const SizedBox(height: 9),
@@ -343,9 +421,7 @@ class _HomeScreenState extends State<HomeScreen> {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
-                color: isSelected
-                    ? Colors.white
-                    : const Color(0xFF333044),
+                color: isSelected ? Colors.white : textColor,
                 fontWeight: FontWeight.bold,
                 fontSize: 12,
               ),
@@ -356,7 +432,7 @@ class _HomeScreenState extends State<HomeScreen> {
               style: TextStyle(
                 color: isSelected
                     ? Colors.white70
-                    : Colors.grey.shade600,
+                    : secondaryTextColor,
                 fontSize: 11,
               ),
             ),
@@ -366,15 +442,13 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // Note card
+  // NOTE CARD
   Widget buildNoteCard(
     Map<String, String> note,
     int originalIndex,
   ) {
     final isFavorite = note['isFavorite'] == 'true';
-
     final category = note['category'] ?? 'General';
-
     final createdAt = note['createdAt'] ?? '';
     final updatedAt = note['updatedAt'] ?? '';
 
@@ -384,25 +458,21 @@ class _HomeScreenState extends State<HomeScreen> {
         borderRadius: BorderRadius.circular(17),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.04),
+            color: Colors.black.withValues(alpha: 0.08),
             blurRadius: 8,
             offset: const Offset(0, 3),
           ),
         ],
       ),
-
-      // Material prevents ListTile ink splash errors
       child: Material(
-        color: Colors.white,
+        color: cardColor,
         borderRadius: BorderRadius.circular(17),
         clipBehavior: Clip.antiAlias,
-
         child: ListTile(
           contentPadding: const EdgeInsets.symmetric(
             horizontal: 14,
             vertical: 12,
           ),
-
           leading: Container(
             width: 46,
             height: 46,
@@ -412,22 +482,22 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
             child: Icon(
               getCategoryIcon(category),
-              color: primaryColor,
+              color: widget.isDarkMode
+                  ? Colors.white
+                  : primaryColor,
               size: 25,
             ),
           ),
-
           title: Text(
             note['title'] ?? '',
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
+            style: TextStyle(
               fontWeight: FontWeight.bold,
               fontSize: 16,
-              color: Color(0xFF333044),
+              color: textColor,
             ),
           ),
-
           subtitle: Padding(
             padding: const EdgeInsets.only(top: 7),
             child: Column(
@@ -438,18 +508,15 @@ class _HomeScreenState extends State<HomeScreen> {
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                    color: Colors.grey.shade600,
+                    color: secondaryTextColor,
                     fontSize: 13,
                   ),
                 ),
-
                 const SizedBox(height: 9),
-
-                // Category label
                 Row(
                   children: [
-                    Icon(
-                      getCategoryIcon(category),
+                    const Icon(
+                      Icons.folder_outlined,
                       size: 13,
                       color: primaryColor,
                     ),
@@ -464,16 +531,15 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                   ],
                 ),
-
                 const SizedBox(height: 7),
-
-                // Created date
                 Row(
                   children: [
                     Icon(
                       Icons.calendar_today,
                       size: 12,
-                      color: Colors.deepPurple.shade300,
+                      color: widget.isDarkMode
+                          ? Colors.deepPurple.shade200
+                          : Colors.deepPurple.shade300,
                     ),
                     const SizedBox(width: 5),
                     Expanded(
@@ -483,13 +549,12 @@ class _HomeScreenState extends State<HomeScreen> {
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
                           fontSize: 10,
-                          color: Colors.grey.shade600,
+                          color: secondaryTextColor,
                         ),
                       ),
                     ),
                   ],
                 ),
-
                 if (updatedAt.isNotEmpty &&
                     updatedAt != createdAt) ...[
                   const SizedBox(height: 5),
@@ -498,7 +563,9 @@ class _HomeScreenState extends State<HomeScreen> {
                       Icon(
                         Icons.update,
                         size: 12,
-                        color: Colors.deepPurple.shade300,
+                        color: widget.isDarkMode
+                            ? Colors.deepPurple.shade200
+                            : Colors.deepPurple.shade300,
                       ),
                       const SizedBox(width: 5),
                       Expanded(
@@ -508,7 +575,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
                             fontSize: 10,
-                            color: Colors.grey.shade600,
+                            color: secondaryTextColor,
                           ),
                         ),
                       ),
@@ -518,8 +585,6 @@ class _HomeScreenState extends State<HomeScreen> {
               ],
             ),
           ),
-
-          // Favorite and menu
           trailing: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -533,16 +598,13 @@ class _HomeScreenState extends State<HomeScreen> {
                   toggleFavorite(originalIndex);
                 },
                 icon: Icon(
-                  isFavorite
-                      ? Icons.star
-                      : Icons.star_border,
+                  isFavorite ? Icons.star : Icons.star_border,
                   color: isFavorite
                       ? Colors.amber.shade700
-                      : Colors.grey,
+                      : secondaryTextColor,
                   size: 22,
                 ),
               ),
-
               PopupMenuButton<String>(
                 padding: EdgeInsets.zero,
                 icon: const Icon(
@@ -561,11 +623,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     value: 'edit',
                     child: Row(
                       children: [
-                        Icon(
-                          Icons.edit,
-                          color: primaryColor,
-                          size: 20,
-                        ),
+                        Icon(Icons.edit, color: primaryColor, size: 20),
                         SizedBox(width: 10),
                         Text('Edit'),
                       ],
@@ -575,11 +633,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     value: 'delete',
                     child: Row(
                       children: [
-                        Icon(
-                          Icons.delete,
-                          color: Colors.red,
-                          size: 20,
-                        ),
+                        Icon(Icons.delete, color: Colors.red, size: 20),
                         SizedBox(width: 10),
                         Text('Delete'),
                       ],
@@ -589,7 +643,6 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ],
           ),
-
           onTap: () {
             editNote(originalIndex);
           },
@@ -608,19 +661,15 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     final query = searchController.text.toLowerCase().trim();
 
-    // Apply search, category and favorite filters
     final filteredNotes = notes.asMap().entries.where((entry) {
       final note = entry.value;
 
-      final title =
-          (note['title'] ?? '').toLowerCase();
-
+      final title = (note['title'] ?? '').toLowerCase();
       final description =
           (note['description'] ?? '').toLowerCase();
 
       final matchesSearch =
-          title.contains(query) ||
-          description.contains(query);
+          title.contains(query) || description.contains(query);
 
       final matchesCategory =
           selectedCategoryFilter == 'All' ||
@@ -628,12 +677,9 @@ class _HomeScreenState extends State<HomeScreen> {
               selectedCategoryFilter;
 
       final matchesFavorite =
-          !showFavoritesOnly ||
-          note['isFavorite'] == 'true';
+          !showFavoritesOnly || note['isFavorite'] == 'true';
 
-      return matchesSearch &&
-          matchesCategory &&
-          matchesFavorite;
+      return matchesSearch && matchesCategory && matchesFavorite;
     }).toList();
 
     final favoriteCount = notes.where(
@@ -641,23 +687,26 @@ class _HomeScreenState extends State<HomeScreen> {
     ).length;
 
     return Scaffold(
-      backgroundColor: backgroundColor,
-
+      backgroundColor: widget.isDarkMode
+          ? const Color(0xFF121212)
+          : backgroundColor,
       appBar: AppBar(
-        backgroundColor: backgroundColor,
+        backgroundColor: widget.isDarkMode
+            ? const Color(0xFF121212)
+            : backgroundColor,
         elevation: 0,
-        title: const Row(
+        title: Row(
           children: [
-            Icon(
+            const Icon(
               Icons.menu_book_rounded,
               color: primaryColor,
               size: 27,
             ),
-            SizedBox(width: 10),
+            const SizedBox(width: 10),
             Text(
               'My Organizer',
               style: TextStyle(
-                color: Color(0xFF333044),
+                color: textColor,
                 fontWeight: FontWeight.bold,
                 fontSize: 22,
               ),
@@ -665,6 +714,17 @@ class _HomeScreenState extends State<HomeScreen> {
           ],
         ),
         actions: [
+          IconButton(
+            tooltip: widget.isDarkMode ? 'Light Mode' : 'Dark Mode',
+            icon: Icon(
+              widget.isDarkMode ? Icons.light_mode : Icons.dark_mode,
+              color: widget.isDarkMode
+                  ? Colors.amber
+                  : primaryColor,
+              size: 26,
+            ),
+            onPressed: widget.onToggleTheme,
+          ),
           IconButton(
             icon: const Icon(
               Icons.calendar_month_rounded,
@@ -700,8 +760,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-
-                    // Welcome card
+                    // WELCOME CARD
                     Container(
                       width: double.infinity,
                       padding: const EdgeInsets.all(22),
@@ -761,71 +820,71 @@ class _HomeScreenState extends State<HomeScreen> {
 
                     const SizedBox(height: 22),
 
-                    // Category heading
-                    const Text(
+                    Text(
                       'My Sections',
                       style: TextStyle(
                         fontSize: 19,
                         fontWeight: FontWeight.bold,
-                        color: Color(0xFF333044),
+                        color: textColor,
                       ),
                     ),
 
                     const SizedBox(height: 12),
 
-                    // Category cards
                     SizedBox(
                       height: 105,
                       child: ListView.builder(
                         scrollDirection: Axis.horizontal,
                         itemCount: categories.length,
                         itemBuilder: (context, index) {
-                          return buildCategoryCard(
-                            categories[index],
-                          );
+                          return buildCategoryCard(categories[index]);
                         },
                       ),
                     ),
 
                     const SizedBox(height: 20),
 
-                    const Text(
+                    Text(
                       'Your Notes',
                       style: TextStyle(
                         fontSize: 20,
                         fontWeight: FontWeight.bold,
-                        color: Color(0xFF333044),
+                        color: textColor,
                       ),
                     ),
 
                     const SizedBox(height: 12),
 
-                    // Search bar
+                    // SEARCH BAR
                     TextField(
                       controller: searchController,
+                      style: TextStyle(color: textColor),
                       onChanged: (_) {
                         setState(() {});
                       },
                       decoration: InputDecoration(
                         hintText: 'Search your notes...',
+                        hintStyle: TextStyle(
+                          color: secondaryTextColor,
+                        ),
                         prefixIcon: const Icon(
                           Icons.search,
                           color: primaryColor,
                         ),
-                        suffixIcon:
-                            searchController.text.isNotEmpty
-                                ? IconButton(
-                                    icon: const Icon(Icons.clear),
-                                    onPressed: () {
-                                      searchController.clear();
-                                      setState(() {});
-                                    },
-                                  )
-                                : null,
+                        suffixIcon: searchController.text.isNotEmpty
+                            ? IconButton(
+                                icon: const Icon(Icons.clear),
+                                onPressed: () {
+                                  searchController.clear();
+                                  setState(() {});
+                                },
+                              )
+                            : null,
                         filled: true,
-                        fillColor: Colors.white,
-                        contentPadding:
-                            const EdgeInsets.symmetric(vertical: 15),
+                        fillColor: cardColor,
+                        contentPadding: const EdgeInsets.symmetric(
+                          vertical: 15,
+                        ),
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(15),
                           borderSide: BorderSide.none,
@@ -833,7 +892,9 @@ class _HomeScreenState extends State<HomeScreen> {
                         enabledBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(15),
                           borderSide: BorderSide(
-                            color: Colors.deepPurple.shade100,
+                            color: widget.isDarkMode
+                                ? Colors.white24
+                                : Colors.deepPurple.shade100,
                           ),
                         ),
                         focusedBorder: OutlineInputBorder(
@@ -848,15 +909,12 @@ class _HomeScreenState extends State<HomeScreen> {
 
                     const SizedBox(height: 10),
 
-                    // All and Favorites filters
+                    // FILTER BUTTONS
                     Row(
                       children: [
                         ChoiceChip(
                           label: const Text('All Notes'),
-                          avatar: const Icon(
-                            Icons.notes,
-                            size: 17,
-                          ),
+                          avatar: const Icon(Icons.notes, size: 17),
                           selected: !showFavoritesOnly,
                           selectedColor: const Color(0xFFE6DDF5),
                           onSelected: (_) {
@@ -868,10 +926,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         const SizedBox(width: 10),
                         ChoiceChip(
                           label: const Text('Favorites'),
-                          avatar: const Icon(
-                            Icons.star,
-                            size: 17,
-                          ),
+                          avatar: const Icon(Icons.star, size: 17),
                           selected: showFavoritesOnly,
                           selectedColor: const Color(0xFFFFE8AE),
                           onSelected: (_) {
@@ -885,7 +940,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
                     const SizedBox(height: 8),
 
-                    // Notes list
+                    // NOTES LIST
                     Expanded(
                       child: notes.isEmpty
                           ? buildEmptyState(
@@ -916,15 +971,11 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
 
-      // Add note button
       floatingActionButton: FloatingActionButton.extended(
         onPressed: addNote,
         backgroundColor: primaryColor,
         elevation: 4,
-        icon: const Icon(
-          Icons.add,
-          color: Colors.white,
-        ),
+        icon: const Icon(Icons.add, color: Colors.white),
         label: const Text(
           'Add Note',
           style: TextStyle(
@@ -937,7 +988,7 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // Count badge
+  // COUNT BADGE
   Widget countBadge(IconData icon, String label) {
     return Container(
       padding: const EdgeInsets.symmetric(
@@ -951,11 +1002,7 @@ class _HomeScreenState extends State<HomeScreen> {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(
-            icon,
-            color: Colors.white,
-            size: 16,
-          ),
+          Icon(icon, color: Colors.white, size: 16),
           const SizedBox(width: 6),
           Text(
             label,
@@ -970,7 +1017,7 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // Empty state
+  // EMPTY STATE
   Widget buildEmptyState(
     String title,
     String message,
@@ -984,15 +1031,17 @@ class _HomeScreenState extends State<HomeScreen> {
             Icon(
               icon,
               size: 60,
-              color: Colors.deepPurple.shade200,
+              color: widget.isDarkMode
+                  ? Colors.deepPurple.shade200
+                  : Colors.deepPurple.shade200,
             ),
             const SizedBox(height: 12),
             Text(
               title,
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 18,
                 fontWeight: FontWeight.bold,
-                color: Color(0xFF333044),
+                color: textColor,
               ),
             ),
             const SizedBox(height: 8),
@@ -1001,7 +1050,7 @@ class _HomeScreenState extends State<HomeScreen> {
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontSize: 13,
-                color: Colors.grey.shade600,
+                color: secondaryTextColor,
               ),
             ),
           ],
